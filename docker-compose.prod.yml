@@ -16,6 +16,10 @@ services:
       - "com.docker.compose.service=app"
       - "com.tabula.environment=${ENV:-prod}"
 
+volumes:
+  personae:
+    name: personae
+
 networks:
   personae:
     external: true
