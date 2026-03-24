@@ -8,7 +8,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - name: Chwckout Code
+      - name: Checkout Code
         uses: actions/checkout@v4
       
       - name: Set Key
@@ -41,6 +41,6 @@ jobs:
           port: 22
           script: |
             cd /home/github/.deploy
-            make docker-test-down
-            make docker-test
+            make docker-prod-down
+            make docker-prod
             rm -rf /home/github/.deploy
