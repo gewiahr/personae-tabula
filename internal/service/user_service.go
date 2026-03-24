@@ -16,8 +16,7 @@ func NewUserService(userRepo *postgres.UserRepository) *UserService {
 	return &UserService{userRepo: userRepo}
 }
 
-func (s *UserService) CreateUser(ctx context.Context, username, email string) (*domain.User, error) {
-	// Проверяем, не занят ли username
+func (s *UserService) CreateUser(ctx context.Context, username, password, email string) (*domain.User, error) {
 	existing, _ := s.userRepo.GetByUsername(ctx, username)
 	if existing != nil {
 		return nil, errors.New("username already taken")
@@ -35,6 +34,10 @@ func (s *UserService) CreateUser(ctx context.Context, username, email string) (*
 	return user, nil
 }
 
-func (s *UserService) GetUser(ctx context.Context, id int64) (*domain.User, error) {
+func (s *UserService) GetUserByID(ctx context.Context, id int64) (*domain.User, error) {
 	return s.userRepo.GetByID(ctx, id)
+}
+
+func (s *UserService) GetUserByUsername(ctx context.Context, username string) (*domain.User, error) {
+	return s.userRepo.GetByUsername(ctx, username)
 }

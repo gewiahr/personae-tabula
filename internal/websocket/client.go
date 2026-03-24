@@ -1,28 +1,14 @@
 package websocket
 
 import (
+	"context"
+	"encoding/json"
 	"log"
 	"time"
 
 	"personae-tabula/internal/domain"
 
 	"github.com/gorilla/websocket"
-)
-
-type WSClient struct {
-	hub      *Hub
-	conn     *websocket.Conn
-	send     chan []byte
-	tableID  int64
-	userID   int64
-	username string
-}
-
-const (
-	writeWait      = 10 * time.Second
-	pongWait       = 60 * time.Second
-	pingPeriod     = (pongWait * 9) / 10
-	maxMessageSize = 512
 )
 
 func (c *WSClient) readPump() {
@@ -39,24 +25,53 @@ func (c *WSClient) readPump() {
 	})
 
 	for {
-		var wsEvent domain.WSEvent
-		err := c.conn.ReadJSON(&wsEvent)
+		_, r, err := c.conn.NextReader()
 		if err != nil {
 			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("error: %v", err)
+				log.Printf("websocket error from user %d: %v", c.userID, err)
 			}
 			break
 		}
 
-		// Добавляем информацию о клиенте
+		var wsEvent domain.WSEvent[*domain.TableWSEvent[any]]
+		if err := json.NewDecoder(r).Decode(&wsEvent); err != nil {
+			log.Printf("JSON decode error from user %d: %v", c.userID, err)
+			c.sendError(err, "invalid message format")
+			continue
+		}
+
+		// Enrich with client info
 		wsEvent.TableID = c.tableID
 		wsEvent.UserID = c.userID
-		wsEvent.Username = c.username
-		wsEvent.Timestamp = time.Now().UnixNano() / int64(time.Millisecond)
+		wsEvent.Timestamp = time.Now().Unix()
 
-		// Обрабатываем событие
-		c.hub.handleEvent(&wsEvent)
+		// Process asynchronously with timeout
+		go c.processTableEvent(&wsEvent)
 	}
+}
+
+func (c *WSClient) processTableEvent(event *domain.WSEvent[*domain.TableWSEvent[any]]) {
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	c.hub.handleTableEvent(ctx, event)
+}
+
+func (c *WSClient) sendError(err error, msg string) {
+	// errEvent := &domain.WSEvent[*domain.SystemWSEvent[any]]{
+	// 	Type: domain.WSEventTypeSystem,
+	// 	Event: &domain.SystemWSEvent[any]{
+	// 		Type: domain.SystemWSEventTypeError,
+	// 		Content: &WSError{
+	// 			Error:   err,
+	// 			Message: msg,
+	// 		},
+	// 	},
+	// 	UserID:    c.userID,
+	// 	TableID:   c.tableID,
+	// 	Timestamp: time.Now().Unix(),
+	// }
+	//c.conn.WriteJSON(errEvent)
 }
 
 func (c *WSClient) writePump() {

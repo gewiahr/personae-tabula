@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"time"
 
 	"personae-tabula/internal/domain"
 
@@ -16,9 +17,26 @@ func NewEventRepository(db *bun.DB) *EventRepository {
 	return &EventRepository{db: db}
 }
 
+func (r *EventRepository) SaveEvent(ctx context.Context, userID, tableID, timestamp int64, eventType, content string) (*domain.TableEvent, error) {
+	event := &domain.TableEvent{
+		TableID:   tableID,
+		EventType: eventType,
+		UserID:    userID,
+		CreatedAt: time.Now(),
+		Content:   content,
+	}
+
+	err := r.Save(ctx, event)
+	if err != nil {
+		return nil, err
+	}
+
+	return event, nil
+}
+
 // Сохранить событие в БД
 func (r *EventRepository) Save(ctx context.Context, event *domain.TableEvent) error {
-	_, err := r.db.NewInsert().Model(event).Exec(ctx)
+	_, err := r.db.NewInsert().Model(event).Returning("*").Exec(ctx, event)
 	return err
 }
 
@@ -37,19 +55,21 @@ func (r *EventRepository) GetTableFeed(ctx context.Context, tableID int64, limit
 }
 
 // Получить фид в текстовом формате
-func (r *EventRepository) GetTableFeedText(ctx context.Context, tableID int64, limit int) ([]string, error) {
+func (r *EventRepository) GetTableFeedText(ctx context.Context, tableID int64, limit int) ([]domain.TableEvent, error) {
 	events, err := r.GetTableFeed(ctx, tableID, limit, 0)
 	if err != nil {
 		return nil, err
 	}
 
-	var texts []string
-	for _, event := range events {
-		wsEvent, err := domain.EventFromDBEvent(&event)
-		if err != nil {
-			continue
-		}
-		texts = append(texts, wsEvent.FormatText())
-	}
-	return texts, nil
+	return events, nil
+
+	// var texts []string
+	// for _, event := range events {
+	// 	wsEvent, err := domain.EventFromDBEvent(&event)
+	// 	if err != nil {
+	// 		continue
+	// 	}
+	// 	texts = append(texts, wsEvent.FormatText())
+	// }
+	// return texts, nil
 }

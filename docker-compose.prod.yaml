@@ -1,0 +1,22 @@
+services:
+  tabula:
+    build: .
+    image: tabula-app:${TAG:-latest}
+    container_name: tabula-app
+    hostname: tabula-app
+    volumes:
+      - personae:/app/mnt
+    networks:
+      personae:
+        ipv4_address: 172.41.3.1
+    expose:
+      - 4131
+    labels:
+      - "com.docker.compose.project=tabula"
+      - "com.docker.compose.service=app"
+      - "com.tabula.environment=${ENV:-prod}"
+
+networks:
+  personae:
+    external: true
+    name: personae

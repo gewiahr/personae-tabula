@@ -33,36 +33,36 @@ func roomFeedKey(tableID int64) string {
 }
 
 // Сохранить состояние комнаты
-func (c *RoomCache) SaveRoomState(ctx context.Context, state *domain.RoomState) error {
-	data, err := json.Marshal(state)
-	if err != nil {
-		return err
-	}
-	return c.client.Set(ctx, roomStateKey(state.TableID), data, time.Hour).Err()
-}
+// func (c *RoomCache) SaveRoomState(ctx context.Context, state *domain.RoomState) error {
+// 	data, err := json.Marshal(state)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	return c.client.Set(ctx, roomStateKey(state.TableID), data, time.Hour).Err()
+// }
 
 // Получить состояние комнаты
-func (c *RoomCache) GetRoomState(ctx context.Context, tableID int64) (*domain.RoomState, error) {
-	data, err := c.client.Get(ctx, roomStateKey(tableID)).Bytes()
-	if err == redis.Nil {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
+// func (c *RoomCache) GetRoomState(ctx context.Context, tableID int64) (*domain.RoomState, error) {
+// 	data, err := c.client.Get(ctx, roomStateKey(tableID)).Bytes()
+// 	if err == redis.Nil {
+// 		return nil, nil
+// 	}
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	var state domain.RoomState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return nil, err
-	}
-	return &state, nil
-}
+// 	var state domain.RoomState
+// 	if err := json.Unmarshal(data, &state); err != nil {
+// 		return nil, err
+// 	}
+// 	return &state, nil
+// }
 
 // Добавить пользователя в комнату
-func (c *RoomCache) AddUser(ctx context.Context, tableID, userID int64, username string) error {
+func (c *RoomCache) AddUser(ctx context.Context, tableID, userID int64) error {
 	pipe := c.client.TxPipeline()
 	pipe.SAdd(ctx, roomUsersKey(tableID), userID)
-	pipe.HSet(ctx, fmt.Sprintf("user:%d", userID), "username", username, "room", tableID)
+	pipe.HSet(ctx, fmt.Sprintf("user:%d", userID), "room", tableID)
 	_, err := pipe.Exec(ctx)
 	return err
 }
@@ -71,7 +71,7 @@ func (c *RoomCache) AddUser(ctx context.Context, tableID, userID int64, username
 func (c *RoomCache) RemoveUser(ctx context.Context, tableID, userID int64) error {
 	pipe := c.client.TxPipeline()
 	pipe.SRem(ctx, roomUsersKey(tableID), userID)
-	pipe.HDel(ctx, fmt.Sprintf("user:%d", userID), "username", "room")
+	pipe.HDel(ctx, fmt.Sprintf("user:%d", userID), "room")
 	_, err := pipe.Exec(ctx)
 	return err
 }
@@ -82,26 +82,27 @@ func (c *RoomCache) GetUsers(ctx context.Context, tableID int64) ([]string, erro
 }
 
 // Добавить событие в ленту комнаты (Redis список, для быстрого доступа)
-func (c *RoomCache) PushEvent(ctx context.Context, tableID int64, event *domain.WSEvent) error {
-	// Форматируем событие в текст
-	text := event.FormatText()
+func (c *RoomCache) PushEvent(ctx context.Context, tableID int64, event *domain.WSEvent[any]) error {
+	// Marshal event to JSON
+	eventJSON, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("failed to marshal event: %w", err)
+	}
 
-	// Добавляем в начало списка (LPush для reversed order)
-	// Используем транзакцию для атомарности
 	pipe := c.client.TxPipeline()
 
-	// Добавляем событие в список
-	pipe.LPush(ctx, roomFeedKey(tableID), text)
-
-	// Обрезаем список до последних 100 событий
+	// Store JSON string instead of the struct
+	pipe.LPush(ctx, roomFeedKey(tableID), eventJSON)
 	pipe.LTrim(ctx, roomFeedKey(tableID), 0, 99)
 
-	// Обновляем состояние комнаты
 	stateKey := roomStateKey(tableID)
 	pipe.HIncrBy(ctx, stateKey, "event_count", 1)
-	pipe.HSet(ctx, stateKey, "last_event", text, "updated_at", time.Now().Unix())
+	pipe.HSet(ctx, stateKey,
+		"last_event", eventJSON,
+		"updated_at", time.Now().Unix(),
+	)
 
-	_, err := pipe.Exec(ctx)
+	_, err = pipe.Exec(ctx)
 	return err
 }
 
